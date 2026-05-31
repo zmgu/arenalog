@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net;">
+<title>ArenaLog</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-wrap">
+<!-- 커스텀 타이틀바 -->
+<div class="titlebar" id="titlebar">
+  <div class="titlebar-left">
+    <div class="titlebar-dots">
+      <div class="dot" style="background:#e05252;"></div>
+      <div class="dot" style="background:#e0a852;"></div>
+      <div class="dot" style="background:#52b052;"></div>
+    </div>
+    <span class="app-title-bar">ArenaLog</span>
+  </div>
+  <div class="titlebar-right">
+    <button class="title-btn" id="btn-minimize">&#8212;</button>
+    <button class="title-btn close" id="btn-close">&#10005;</button>
+  </div>
+</div>
+
+<!-- 로딩 화면 -->
+<div class="screen" id="screen-loading">
+  <div class="loading-body">
+    <div style="text-align:center;">
+      <img class="loading-icon" src="../assets/icon.png" alt="ArenaLog">
+      <div class="loading-title">ArenaLog</div>
+      <div class="loading-sub">데이터를 불러오는 중...</div>
+    </div>
+    <div style="width:280px;">
+      <div class="loading-progress-wrap">
+        <div class="loading-progress-bar" id="loading-bar"></div>
+      </div>
+      <div style="font-size:10px; color:#666; text-align:right; margin-top:5px;" id="loading-pct">0%</div>
+    </div>
+    <div class="loading-steps" id="loading-steps"></div>
+    <div id="loading-retry" style="display:none; margin-top:16px; text-align:center;">
+      <div id="loading-retry-msg" style="font-size:11px; color:#888; margin-bottom:10px;"></div>
+      <button class="btn-primary" style="width:120px; padding:8px;" id="btn-retry">다시 시도</button>
+    </div>
+  </div>
+</div>
+
+<!-- API 키 입력 화면 -->
+<div class="screen hidden" id="screen-apikey">
+  <div class="screen1-body">
+    <div class="login-card">
+      <div class="logo-area">
+        <img class="logo-icon" src="../assets/icon.png" alt="ArenaLog">
+        <div class="logo-text">ArenaLog</div>
+        <div class="logo-sub">시작하기 전에 Riot API 키가 필요합니다</div>
+      </div>
+      <div class="api-key-wrap">
+        <div class="api-key-label-row">
+          <span class="api-key-label">Riot API 키</span>
+          <button class="api-key-link-btn" id="btn-riot-dev">발급받기 ↗</button>
+        </div>
+        <input class="input-apikey" id="input-apikey" type="text" placeholder="RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" spellcheck="false" autocomplete="off" />
+        <div id="apikey-error-msg" class="api-key-error hidden">키가 만료되었거나 유효하지 않습니다. 새 키를 입력해 주세요.</div>
+        <div class="api-key-sub">developer.riotgames.com에서 PERSONAL API KEY를 발급받으세요.</div>
+      </div>
+      <button class="btn-primary" style="margin-top:20px;" id="btn-apikey-confirm">다음</button>
+    </div>
+  </div>
+</div>
+
+<!-- 1화면: 소환사 입력 -->
+<div class="screen hidden" id="screen-login">
+  <div class="screen1-body">
+    <div class="login-card">
+      <div class="logo-area">
+        <img class="logo-icon" src="../assets/icon.png" alt="ArenaLog">
+        <div class="logo-text">ArenaLog</div>
+        <div class="logo-sub">아레나의 신 우승 챔피언 기록 앱</div>
+      </div>
+      <div class="input-row" id="login-input-row">
+        <input class="input-summoner" id="input-summoner" type="text" placeholder="소환사명" autocomplete="off" />
+        <div class="input-divider"></div>
+        <div class="input-tag-wrap">
+          <span class="input-tag-prefix">#</span>
+          <input class="input-tag" id="input-tag" type="text" placeholder="KR1" maxlength="8" autocomplete="off" />
+        </div>
+      </div>
+      <button class="btn-primary" id="btn-confirm">확인</button>
+      <div class="login-hint">유효한 계정인지 확인 후 이동합니다</div>
+    </div>
+  </div>
+</div>
+
+<!-- 2화면: 메인 -->
+<div class="screen hidden" id="screen-main">
+  <div class="screen2-body">
+    <!-- 상단 바 -->
+    <div class="top-bar">
+      <div class="user-badge">
+        <div class="user-dot">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c89b3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+        </div>
+        <div class="user-info">
+          <div class="user-name" id="user-name-display"></div>
+          <div class="user-tag" id="user-tag-display"></div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="btn-sm btn-top-refresh" id="btn-refresh-top">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="position:relative;top:1px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          전적 갱신
+        </button>
+        <div class="account-menu-wrap" id="account-menu-wrap">
+          <button class="btn-icon" id="btn-account-menu" title="계정 관리">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          <div class="account-dropdown hidden" id="account-dropdown">
+            <button class="dropdown-item" id="btn-change-account">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              계정 변경
+            </button>
+            <button class="dropdown-item" id="btn-change-apikey">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+              API 키 변경
+            </button>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item dropdown-item-danger" id="btn-reset-data">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              데이터 초기화
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 진척도 -->
+    <div class="stat-section">
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-label">우승 완료한 챔피언</div>
+          <div class="stat-main">
+            <span class="stat-num" id="stat-completed">0</span>
+            <span class="stat-sub">/ 60</span>
+          </div>
+          <div class="progress-wrap"><div class="progress-bar" id="main-progress-bar" style="width:0%;"></div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">최근 20 매치 승률</div>
+          <div class="winrate-wrap">
+            <div class="donut-wrap">
+              <svg viewBox="0 0 48 48" class="donut-chart">
+                <circle class="donut-bg" cx="24" cy="24" r="21"/>
+                <circle class="donut-arc" id="donut-arc" cx="24" cy="24" r="21"/>
+              </svg>
+              <span class="donut-label" id="stat-winrate-pct">0%</span>
+            </div>
+            <div class="win-champs-grid" id="win-champs-grid"></div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">단골 증강</div>
+          <div class="top-augs" id="top-augs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2분할 -->
+    <div class="main-split">
+      <!-- 왼쪽: 챔피언 목록 -->
+      <div class="col-left">
+        <div class="section-label" id="champ-header-normal">
+          <div class="label-with-help">
+            <span id="champ-list-label">챔피언 목록</span>
+            <button class="btn-help" id="btn-champ-info" title="챔피언 목록 안내">?</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="gold" id="champ-count-label">0 / 60</span>
+            <button class="btn-sm btn-icon-only" id="btn-edit" title="편집">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="section-label edit-banner hidden" id="champ-header-edit">
+          <div class="label-with-help">
+            <span class="edit-banner-label">편집 모드</span>
+            <button class="btn-help btn-help-edit" id="btn-edit-guide" title="편집 모드 안내">?</button>
+            <span class="edit-limit-msg hidden" id="edit-limit-msg">최대 10개</span>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center; margin-left:auto;">
+            <button class="btn-sm btn-icon-only btn-reset-edit" id="btn-edit-reset" title="초기화 (수동 추가 전체 해제)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+            <button class="btn-sm btn-icon-only btn-cancel-edit" id="btn-edit-cancel" title="취소">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <button class="btn-sm btn-icon-only btn-save-edit" id="btn-edit-save" title="저장">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="search-wrap">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input class="search-input" id="champ-search" type="text" placeholder="챔피언 검색 (한글·영어·초성)" autocomplete="off" />
+          <button class="search-clear hidden" id="search-clear">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="champ-scroll" id="champ-scroll">
+          <div class="champ-grid" id="champ-grid"></div>
+        </div>
+      </div>
+
+      <!-- 오른쪽: 매치 히스토리 -->
+      <div class="col-right">
+        <div class="section-label">
+          <span>매치 히스토리</span>
+        </div>
+        <div class="history-search-spacer"></div>
+        <div class="history-scroll" id="history-scroll"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /#app-wrap -->
+
+<!-- 오류 팝업 -->
+<div class="modal-overlay hidden" id="modal-error">
+  <div class="modal-box">
+    <div class="modal-titlebar">
+      <div class="modal-titlebar-left">
+        <div class="modal-titlebar-dots">
+          <div class="modal-dot" style="background:#e05252;"></div>
+          <div class="modal-dot" style="background:#e0a852;"></div>
+          <div class="modal-dot" style="background:#52b052;"></div>
+        </div>
+        <span class="modal-title-text">오류</span>
+      </div>
+      <div class="modal-titlebar-right">
+        <button class="modal-title-btn close" id="modal-error-close">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-heading" id="modal-error-msg"></div>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="modal-btn confirm" id="modal-error-ok">확인</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 편집 변경 내역 팝업 -->
+<div class="modal-overlay hidden" id="modal-edit">
+  <div class="modal-box">
+    <div class="modal-titlebar">
+      <div class="modal-titlebar-left">
+        <div class="modal-titlebar-dots">
+          <div class="modal-dot" style="background:#e05252;"></div>
+          <div class="modal-dot" style="background:#e0a852;"></div>
+          <div class="modal-dot" style="background:#52b052;"></div>
+        </div>
+        <span class="modal-title-text">변경 내역 확인</span>
+      </div>
+      <div class="modal-titlebar-right">
+        <button class="modal-title-btn close" id="modal-edit-close">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-heading">다음 변경사항을 적용할까요?</div>
+      <div id="modal-edit-list"></div>
+      <div class="modal-divider"></div>
+      <div class="modal-actions">
+        <button class="modal-btn" id="modal-edit-cancel">취소</button>
+        <button class="modal-btn confirm" id="modal-edit-apply">적용</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 새로고침 결과 팝업 -->
+<div class="modal-overlay hidden" id="modal-refresh">
+  <div class="modal-box">
+    <div class="modal-titlebar">
+      <div class="modal-titlebar-left">
+        <div class="modal-titlebar-dots">
+          <div class="modal-dot" style="background:#e05252;"></div>
+          <div class="modal-dot" style="background:#e0a852;"></div>
+          <div class="modal-dot" style="background:#52b052;"></div>
+        </div>
+        <span class="modal-title-text">새 우승 기록</span>
+      </div>
+      <div class="modal-titlebar-right">
+        <button class="modal-title-btn close" id="modal-refresh-close">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-heading" id="modal-refresh-msg"></div>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="modal-btn confirm" id="modal-refresh-ok">확인</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 데이터 초기화 확인 팝업 -->
+<div class="modal-overlay hidden" id="modal-reset">
+  <div class="modal-box">
+    <div class="modal-titlebar">
+      <div class="modal-titlebar-left">
+        <div class="modal-titlebar-dots">
+          <div class="modal-dot" style="background:#e05252;"></div>
+          <div class="modal-dot" style="background:#e0a852;"></div>
+          <div class="modal-dot" style="background:#52b052;"></div>
+        </div>
+        <span class="modal-title-text">데이터 초기화</span>
+      </div>
+      <div class="modal-titlebar-right">
+        <button class="modal-title-btn close" id="modal-reset-close">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-heading" style="color:#cc8888;">삭제되는 데이터</div>
+      <div style="font-size:11px; color:#aaa; margin-top:10px; line-height:1.8;">
+        <div>• 전체 계정의 챔피언 우승 기록 (자동 · 수동 모두)</div>
+        <div>• 매치 히스토리 캐시</div>
+      </div>
+      <div style="font-size:11px; color:#666; margin-top:8px; line-height:1.6;">
+        <div>소환사 계정 정보는 유지됩니다.</div>
+        <div>이 작업은 되돌릴 수 없습니다.</div>
+      </div>
+      <div class="modal-divider" style="margin-top:14px;"></div>
+      <div class="modal-actions">
+        <button class="modal-btn" id="modal-reset-cancel">취소</button>
+        <button class="modal-btn" id="modal-reset-confirm" style="background:#3a1a1a; border-color:#7a3a3a; color:#cc8888;">초기화</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 로딩 모달 -->
+<div class="modal-overlay hidden" id="modal-loading">
+  <div class="loading-modal-box">
+    <div class="loading-modal-spinner"></div>
+    <div class="loading-modal-text" id="loading-modal-text">불러오는 중...</div>
+    <div class="loading-modal-progress-wrap hidden" id="loading-modal-progress-wrap">
+      <div class="loading-modal-progress-bar" id="loading-modal-bar"></div>
+    </div>
+    <div class="loading-modal-pct hidden" id="loading-modal-pct">0%</div>
+  </div>
+</div>
+
+<!-- 툴팁 -->
+<div class="tooltip-box hidden" id="tooltip"></div>
+
+<!-- 챔피언 목록 안내 팝오버 -->
+<div class="info-popover hidden" id="champ-info-popover">
+  <div class="info-row"><span style="color:#c89b3c; font-weight:500;">금색</span><span class="info-sep">—</span><span>1위 달성 챔피언</span></div>
+  <div class="info-row"><span style="color:#c4a8f0; font-weight:500;">보라색</span><span class="info-sep">—</span><span>1위 달성 챔피언 (수동 추가)</span></div>
+  <div class="info-row"><span style="color:#888; font-weight:500;">회색</span><span class="info-sep">—</span><span>미완료 챔피언</span></div>
+  <div class="info-divider"></div>
+  <div class="info-tip">
+    오른쪽 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#e0e0e0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;position:relative;top:-1px;"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> 버튼을 누르면 완료 여부를 수동으로 편집할 수 있습니다.
+  </div>
+</div>
+
+<!-- 편집 모드 온보딩 가이드 -->
+<div class="guide-overlay hidden" id="guide-overlay"></div>
+<div class="guide-highlight-box hidden" id="guide-highlight-box"></div>
+<div class="guide-popover hidden" id="guide-popover">
+  <div class="guide-header">
+    <span class="guide-step-label" id="guide-step-label">1 / 5</span>
+    <button class="guide-close-btn" id="guide-close">✕</button>
+  </div>
+  <div class="guide-title" id="guide-title"></div>
+  <div class="guide-desc" id="guide-desc"></div>
+  <div class="guide-nav">
+    <button class="guide-btn" id="guide-prev">이전</button>
+    <button class="guide-btn guide-btn-primary" id="guide-next">다음</button>
+  </div>
+</div>
+
+<script src="cache.js"></script>
+<script src="hangul.js"></script>
+<script src="app.js"></script>
+<script src="onboarding.js"></script>
+</body>
+</html>

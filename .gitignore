@@ -1,0 +1,13 @@
+.env
+node_modules/
+dist/
+build/
+screenshots/
+
+# 개발 전용 파일
+mockup.html
+stat.html
+scripts/
+random.png
+Gambler's Blade.png
+assets/icon-original.png

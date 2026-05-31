@@ -1,0 +1,49 @@
+{
+  "name": "arenolog",
+  "version": "1.0.0",
+  "description": "리그 오브 레전드 아레나 60챔피언 우승 트래커",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0",
+    "playwright-core": "^1.60.0",
+    "sharp": "^0.34.5"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.0",
+    "hangul-js": "^0.2.6"
+  },
+  "build": {
+    "appId": "com.arenolog.app",
+    "productName": "ArenaLog",
+    "copyright": "Copyright © 2025 ArenaLog",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*",
+      "!assets/icon-original.png"
+    ],
+    "extraResources": [],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ArenaLog"
+    }
+  }
+}
