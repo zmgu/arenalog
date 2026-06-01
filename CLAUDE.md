@@ -146,7 +146,7 @@ window.cache = {
 - 등수별 border-left 2px 색상 구분
 - 카드 클릭 시 증강/아이템 영역 펼침
   - 증강: 프리즘/골드/실버 등급 칩 + 호버 툴팁
-  - 아이템: 30x30px 셀, 비전 탐지기 계열(ID: 3364, 3513) 제외
+  - 아이템: 30x30px 셀, 비전 탐지기 계열(ID: 3348 Arcane Sweeper, 3364 Oracle Lens, 3513 Eye of the Herald) 제외
   - CDragon 미반영 신규 증강은 "알 수 없는 증강" placeholder 표시
 - 새로고침 시 신규 1등 챔피언 있으면 알림 팝업
 

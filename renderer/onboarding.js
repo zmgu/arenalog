@@ -96,9 +96,10 @@ function showStep(idx) {
     if (scroll) {
       const sr = scroll.getBoundingClientRect();
       const cells = target.querySelectorAll('.champ-cell');
-      const rightCell = cells.length >= 6 ? cells[5] : cells[cells.length - 1];
+      let maxRight = 0;
+      cells.forEach(c => { const r = c.getBoundingClientRect(); if (r.right > maxRight) maxRight = r.right; });
       x1 = sr.left - p;
-      x2 = (rightCell ? rightCell.getBoundingClientRect().right : sr.right) + p;
+      x2 = (maxRight > 0 ? maxRight : sr.right) + p;
       y1 = Math.max(rect.top,    sr.top)    - p;
       y2 = Math.min(rect.bottom, sr.bottom) + p;
       if (y1 > y2) y2 = y1;

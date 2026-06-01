@@ -26,8 +26,8 @@ const TOOLTIP_WIDTH       = 214;
 const TOOLTIP_HEIGHT      = 120;
 const RANK_COLORS         = ['#c89b3c', '#888888', '#8B6914'];
 
-// 매치 히스토리에서 제외할 아이템 ID (비전 탐지기 계열 — 이름 변경에 무관하게 ID로 관리)
-const EXCLUDED_ITEM_IDS = new Set(['3364', '3513']);
+// 매치 히스토리에서 제외할 아이템 ID (비전 탐지기 계열: 3348 Arcane Sweeper, 3364 Oracle Lens, 3513 Eye of the Herald)
+const EXCLUDED_ITEM_IDS = new Set(['3348', '3364', '3513']);
 
 // CDragon 미반영 신규 증강 placeholder
 const UNKNOWN_AUGMENT = (id) => ({
