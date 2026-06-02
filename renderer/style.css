@@ -29,7 +29,7 @@ body {
 /* Titlebar */
 .titlebar {
   background: #252525;
-  padding: 0 0 0 16px;
+  padding: 0 0 0 6px;
   height: 36px;
   display: flex;
   align-items: center;
@@ -40,9 +40,103 @@ body {
   -webkit-app-region: drag;
 }
 .titlebar-left { display: flex; align-items: center; gap: 8px; }
-.titlebar-dots { display: flex; gap: 6px; }
-.dot { width: 12px; height: 12px; border-radius: 50%; }
-.app-title-bar { font-size: 12px; color: #888; }
+.app-title-bar { font-size: 13px; color: #888; }
+.title-reel-wrap {
+  display: grid;
+  position: relative;
+  top: -1px;
+}
+.arena-log-title-layer {
+  grid-area: 1 / 1;
+  font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+  opacity: 0;
+  clip-path: inset(0 100% 0 0);
+  background: linear-gradient(to bottom, #FFF5CC 0%, #D4A840 30%, #C89B3C 60%, #8B6914 85%, #6B4400 100%);
+}
+.arena-log-title-layer.active {
+  opacity: 1;
+  clip-path: inset(0 0% 0 0);
+}
+.arena-log-title-layer.title-sweeping {
+  opacity: 1;
+  z-index: 2;
+  animation: title-sweep-in 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes title-sweep-in {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0% 0 0); }
+}
+.arena-log-title-layer.title-leaving {
+  opacity: 1;
+  z-index: 1;
+  animation: title-sweep-out 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes title-sweep-out {
+  from { clip-path: inset(0 0 0 0%); }
+  to   { clip-path: inset(0 0 0 100%); }
+}
+.arena-log-title-layer[data-grade="silver"] {
+  background: linear-gradient(to bottom, #F0F0F0 0%, #C8C8C8 35%, #A0A0A0 65%, #787878 100%);
+  -webkit-background-clip: text; background-clip: text;
+}
+.arena-log-title-layer[data-grade="gold"] {
+  background: linear-gradient(to bottom, #FFF5CC 0%, #D4A840 30%, #C89B3C 60%, #8B6914 85%, #6B4400 100%);
+  -webkit-background-clip: text; background-clip: text;
+}
+.arena-log-title-layer[data-grade="prismatic"] {
+  background:
+    linear-gradient(to bottom, transparent 35%, rgba(15, 8, 40, 0.65) 100%),
+    linear-gradient(90deg, #f0d860 0%, #f0a8f0 28%, #b068f0 52%, #88a0f0 74%, #78e8f0 100%);
+  -webkit-background-clip: text, text;
+  background-clip: text, text;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+.titlebar-aug-reel {
+  width: 26px;
+  height: 26px;
+  position: relative;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.titlebar-aug-reel img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  clip-path: inset(0 100% 0 0 round 4px);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.titlebar-aug-reel img.aug-visible {
+  clip-path: inset(0 0% 0 0 round 4px);
+}
+.titlebar-aug-reel img.aug-entering {
+  z-index: 2;
+  animation: aug-wipe-in 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes aug-wipe-in {
+  from { clip-path: inset(0 100% 0 0 round 4px); }
+  to   { clip-path: inset(0 0% 0 0 round 4px); }
+}
+.titlebar-aug-reel img.aug-leaving {
+  z-index: 1;
+  animation: aug-wipe-out 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes aug-wipe-out {
+  from { clip-path: inset(0 0 0 0% round 4px); }
+  to   { clip-path: inset(0 0 0 100% round 4px); }
+}
 .titlebar-right { display: flex; -webkit-app-region: no-drag; }
 .title-btn {
   width: 36px; height: 36px;

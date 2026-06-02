@@ -13,7 +13,9 @@ const ARENA_QUEUE_IDS = new Set([1700, 1750]);
 // rarity=4 는 게임 내 효과(화학공학 부패기, 양의 안식처 등)로 일반 증강이 아님
 // rarity: 0=실버, 1=골드, 2=프리즘, 4=게임효과(제외)
 const AUG_EXCLUDE = new Set(['증강 강화', '증강 슬롯 획득', '증강 교체', '증강 슬롯 추가']);
-function isGameEffect(aug) { return (aug?.rarityNum ?? 0) > 2; }
+function isGameEffect(aug)    { return (aug?.rarityNum ?? 0) > 2; }
+function isArenaMatch(match)  { return ARENA_QUEUE_IDS.has(match?.info?.queueId); }
+function isDisplayableAug(aug){ return !isGameEffect(aug) && !AUG_EXCLUDE.has(aug.name); }
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const TOTAL_CHAMPIONS     = 60;
@@ -25,6 +27,8 @@ const DONUT_RADIUS        = 21;
 const TOOLTIP_WIDTH       = 214;
 const TOOLTIP_HEIGHT      = 120;
 const RANK_COLORS         = ['#c89b3c', '#888888', '#8B6914'];
+const AUGMENT_SLOT_COUNT  = 6; // playerAugment1 ~ playerAugment6
+const ITEM_SLOT_COUNT     = 6; // 아이템 표시 슬롯 수 (item0 ~ item6 = 7개 읽되 6칸 표시)
 
 // 매치 히스토리에서 제외할 아이템 ID (비전 탐지기 계열: 3348 Arcane Sweeper, 3364 Oracle Lens, 3513 Eye of the Herald)
 const EXCLUDED_ITEM_IDS = new Set(['3348', '3364', '3513']);
@@ -57,6 +61,9 @@ function debounce(fn, ms) {
   let t;
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
+
+function openModal(id)  { $(id).classList.remove('hidden'); }
+function closeModal(id) { $(id).classList.add('hidden'); }
 
 async function saveAccountSettings(name, tag, puuid) {
   await window.api.setSetting('summoner_name', name);
@@ -107,7 +114,7 @@ async function redirectToApiKeyScreen() {
 async function scanAndMarkWins(matches, prevCompleted = null) {
   const newWins = [];
   for (const match of matches) {
-    if (!ARENA_QUEUE_IDS.has(match?.info?.queueId)) continue;
+    if (!isArenaMatch(match)) continue;
     const p = match.info.participants?.find(x => x.puuid === cache.puuid);
     if (!p || p.placement !== 1 || completedSet.has(p.championName)) continue;
     if (prevCompleted?.has(p.championName)) continue;
@@ -200,6 +207,70 @@ function showLoadingRetry(msg) {
   $('loading-retry').style.display = 'block';
 }
 
+async function loadVersion() {
+  const versions = await window.api.fetchUrlJson('https://ddragon.leagueoflegends.com/api/versions.json');
+  cache.version = versions[0];
+}
+
+async function loadChampions() {
+  const champData = await window.api.fetchUrlJson(
+    `https://ddragon.leagueoflegends.com/cdn/${cache.version}/data/ko_KR/champion.json`
+  );
+  const champEntries = Object.values(champData?.data ?? {});
+  for (const c of champEntries) {
+    cache.champions[c.id] = { nameKo: c.name, nameEn: c.id, iconBase64: null };
+    cache.championsIndex[c.id.toLowerCase()] = c.id;
+  }
+  return champEntries;
+}
+
+async function loadChampionIcons(champEntries) {
+  await Promise.allSettled(champEntries.map(async (c) => {
+    const url = `https://ddragon.leagueoflegends.com/cdn/${cache.version}/img/champion/${c.id}.png`;
+    cache.champions[c.id].iconBase64 = await window.api.fetchUrlBase64(url);
+  }));
+}
+
+async function loadItems() {
+  const itemData = await window.api.fetchUrlJson(
+    `https://ddragon.leagueoflegends.com/cdn/${cache.version}/data/ko_KR/item.json`
+  );
+  await Promise.allSettled(Object.entries(itemData?.data ?? {}).map(async ([id, item]) => {
+    const iconBase64 = await window.api.fetchUrlBase64(
+      `https://ddragon.leagueoflegends.com/cdn/${cache.version}/img/item/${id}.png`
+    );
+    cache.items[id] = { name: item.name, description: item.description, iconBase64 };
+  }));
+}
+
+async function loadAugments() {
+  const augData = await window.api.fetchUrlJson(
+    'https://raw.communitydragon.org/latest/cdragon/arena/ko_kr.json'
+  );
+  const gradeMap = { 0: 'silver', 1: 'gold', 2: 'prismatic' };
+  for (const aug of (augData.augments || [])) {
+    cache.augments[aug.id] = {
+      name: aug.name,
+      grade: gradeMap[aug.rarity] || 'silver',
+      rarityNum: aug.rarity ?? 0,
+      description: aug.desc || '',
+      dataValues: aug.dataValues || {},
+      iconSmall: aug.iconSmall || null,
+      iconLarge: aug.iconLarge || null,
+      iconBase64: null,
+    };
+  }
+  const FRAME_BASE = 'https://raw.communitydragon.org/latest/game/assets/ux/cherry/augments/augmentselection/augmentcard_frame_';
+  await Promise.all(['silver', 'gold', 'prismatic'].map(async (grade) => {
+    try { cache.augFrames[grade] = await window.api.fetchUrlBase64(FRAME_BASE + grade + '.png'); } catch {}
+  }));
+  try {
+    cache.augFallbackIcon = await window.api.fetchUrlBase64(
+      'https://raw.communitydragon.org/latest/game/assets/ux/cherry/augments/icons/augment404_large.png'
+    );
+  } catch {}
+}
+
 async function loadAllData() {
   showScreen('loading');
   $('loading-retry').style.display = 'none';
@@ -211,70 +282,19 @@ async function loadAllData() {
 
   try {
     renderSteps(0); setProgress(0);
-
-    // Step 0: version
-    const versions = await window.api.fetchUrlJson('https://ddragon.leagueoflegends.com/api/versions.json');
-    cache.version = versions[0];
+    await loadVersion();
     renderSteps(1); setProgress(10);
 
-    // Step 1: champion list
-    const champData = await window.api.fetchUrlJson(
-      `https://ddragon.leagueoflegends.com/cdn/${cache.version}/data/ko_KR/champion.json`
-    );
-    const champEntries = Object.values(champData?.data ?? {});
-    for (const c of champEntries) {
-      cache.champions[c.id] = { nameKo: c.name, nameEn: c.id, iconBase64: null };
-      cache.championsIndex[c.id.toLowerCase()] = c.id;
-    }
+    const champEntries = await loadChampions();
     renderSteps(2); setProgress(20);
 
-    // Step 2: champion icons (batch, concurrent) — 개별 실패 시 placeholder 유지
-    await Promise.allSettled(champEntries.map(async (c) => {
-      const url = `https://ddragon.leagueoflegends.com/cdn/${cache.version}/img/champion/${c.id}.png`;
-      cache.champions[c.id].iconBase64 = await window.api.fetchUrlBase64(url);
-    }));
+    await loadChampionIcons(champEntries);
     renderSteps(3); setProgress(50);
 
-    // Step 3: items
-    const itemData = await window.api.fetchUrlJson(
-      `https://ddragon.leagueoflegends.com/cdn/${cache.version}/data/ko_KR/item.json`
-    );
-    const itemEntries = Object.entries(itemData?.data ?? {});
-    await Promise.allSettled(itemEntries.map(async ([id, item]) => {
-      const iconBase64 = await window.api.fetchUrlBase64(
-        `https://ddragon.leagueoflegends.com/cdn/${cache.version}/img/item/${id}.png`
-      );
-      cache.items[id] = { name: item.name, description: item.description, iconBase64 };
-    }));
+    await loadItems();
     renderSteps(4); setProgress(75);
 
-    // Step 4: augments (Community Dragon) — metadata only, icons loaded lazily
-    const augData = await window.api.fetchUrlJson(
-      'https://raw.communitydragon.org/latest/cdragon/arena/ko_kr.json'
-    );
-    const augList = augData.augments || [];
-    const gradeMap = { 0: 'silver', 1: 'gold', 2: 'prismatic' };
-    for (const aug of augList) {
-      cache.augments[aug.id] = {
-        name: aug.name,
-        grade: gradeMap[aug.rarity] || 'silver',
-        rarityNum: aug.rarity ?? 0,
-        description: aug.desc || '',
-        dataValues: aug.dataValues || {},
-        iconSmall: aug.iconSmall || null,
-        iconLarge: aug.iconLarge || null,
-        iconBase64: null,
-      };
-    }
-    const FRAME_BASE = 'https://raw.communitydragon.org/latest/game/assets/ux/cherry/augments/augmentselection/augmentcard_frame_';
-    await Promise.all(['silver', 'gold', 'prismatic'].map(async (grade) => {
-      try { cache.augFrames[grade] = await window.api.fetchUrlBase64(FRAME_BASE + grade + '.png'); } catch {}
-    }));
-    try {
-      cache.augFallbackIcon = await window.api.fetchUrlBase64(
-        'https://raw.communitydragon.org/latest/game/assets/ux/cherry/augments/icons/augment404_large.png'
-      );
-    } catch {}
+    await loadAugments();
     setProgress(100);
 
     await new Promise(r => setTimeout(r, 300));
@@ -478,14 +498,14 @@ $('btn-change-apikey').addEventListener('click', async () => {
 // ── Data reset ─────────────────────────────────────────────────────────────
 $('btn-reset-data').addEventListener('click', () => {
   closeAccountDropdown();
-  $('modal-reset').classList.remove('hidden');
+  openModal('modal-reset');
 });
 
-$('modal-reset-close').addEventListener('click', () => $('modal-reset').classList.add('hidden'));
-$('modal-reset-cancel').addEventListener('click', () => $('modal-reset').classList.add('hidden'));
+$('modal-reset-close').addEventListener('click', () => closeModal('modal-reset'));
+$('modal-reset-cancel').addEventListener('click', () => closeModal('modal-reset'));
 
 $('modal-reset-confirm').addEventListener('click', async () => {
-  $('modal-reset').classList.add('hidden');
+  closeModal('modal-reset');
   await window.api.resetData();
 
   completedSet = new Set();
@@ -513,7 +533,7 @@ function updateCompletionStat() {
 }
 
 function updateWinrateStat() {
-  const arenaMatches = (cache.matchHistory || []).filter(m => ARENA_QUEUE_IDS.has(m?.info?.queueId));
+  const arenaMatches = (cache.matchHistory || []).filter(isArenaMatch);
   const recent = arenaMatches.slice(0, RECENT_MATCH_WINDOW);
   const winCount = recent.filter(m => {
     const p = m.info.participants?.find(x => x.puuid === cache.puuid);
@@ -543,14 +563,14 @@ function updateWinrateStat() {
 function updateTopAugStat() {
   const augCount = {};
   for (const match of cache.matchHistory) {
-    if (!ARENA_QUEUE_IDS.has(match?.info?.queueId)) continue;
+    if (!isArenaMatch(match)) continue;
     const p = match.info.participants?.find(x => x.puuid === cache.puuid);
     if (!p) continue;
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= AUGMENT_SLOT_COUNT; i++) {
       const augId = p[`playerAugment${i}`];
       if (augId && cache.augments[augId]) {
         const aug = cache.augments[augId];
-        if (!isGameEffect(aug) && !AUG_EXCLUDE.has(aug.name)) {
+        if (isDisplayableAug(aug)) {
           augCount[augId] = (augCount[augId] || 0) + 1;
         }
       }
@@ -816,13 +836,13 @@ function showEditModal() {
 
   makeGrid([...editPending.add], 'add', '+');
   makeGrid([...editPending.del], 'del', '-');
-  $('modal-edit').classList.remove('hidden');
+  openModal('modal-edit');
 }
 
-$('modal-edit-close').addEventListener('click', () => $('modal-edit').classList.add('hidden'));
-$('modal-edit-cancel').addEventListener('click', () => $('modal-edit').classList.add('hidden'));
+$('modal-edit-close').addEventListener('click', () => closeModal('modal-edit'));
+$('modal-edit-cancel').addEventListener('click', () => closeModal('modal-edit'));
 $('modal-edit-apply').addEventListener('click', async () => {
-  $('modal-edit').classList.add('hidden');
+  closeModal('modal-edit');
 
   const toAdd = [...editPending.add].map(id => ({
     id,
@@ -929,7 +949,7 @@ function renderMatchHistory(matches) {
   }
 
   for (const match of matches) {
-    if (!ARENA_QUEUE_IDS.has(match?.info?.queueId)) continue;
+    if (!isArenaMatch(match)) continue;
     const participant = match.info.participants?.find(p => p.puuid === cache.puuid);
     if (!participant) continue;
 
@@ -952,12 +972,12 @@ function renderMatchHistory(matches) {
     // Augments — rarity=4(게임 효과) 및 이름 기반 제외 목록 필터링
     // CDragon에 아직 없는 신규 증강은 placeholder로 표시
     const augments = [];
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= AUGMENT_SLOT_COUNT; i++) {
       const augId = participant[`playerAugment${i}`];
       if (!augId) continue;
       if (cache.augments[augId]) {
         const aug = cache.augments[augId];
-        if (!isGameEffect(aug) && !AUG_EXCLUDE.has(aug.name)) {
+        if (isDisplayableAug(aug)) {
           augments.push({ id: augId, ...aug });
         }
       } else {
@@ -967,7 +987,7 @@ function renderMatchHistory(matches) {
 
     // Items — 아이템 ID 기반으로 와드류 제외 (이름 변경 패치에 무관)
     const itemIds = [];
-    for (let i = 0; i <= 6; i++) {
+    for (let i = 0; i <= ITEM_SLOT_COUNT; i++) {
       const itemId = participant[`item${i}`];
       if (!itemId || itemId === 0) continue;
       if (EXCLUDED_ITEM_IDS.has(String(itemId))) continue;
@@ -1063,7 +1083,7 @@ function createItemSection(itemIds) {
     }
     row.appendChild(cell);
   }
-  for (let i = itemIds.length; i < 6; i++) {
+  for (let i = itemIds.length; i < ITEM_SLOT_COUNT; i++) {
     const cell = document.createElement('div');
     cell.className = 'item-cell';
     row.appendChild(cell);
@@ -1095,6 +1115,12 @@ function formatDate(ts) {
 }
 
 // ── Refresh ────────────────────────────────────────────────────────────────
+function getLatestMatchTimestamp() {
+  if (!cache.matchHistory.length) return null;
+  const ts = Math.max(...cache.matchHistory.map(m => m?.info?.gameEndTimestamp || m?.info?.gameCreation || 0));
+  return ts > 0 ? Math.floor(ts / 1000) + 1 : null;
+}
+
 async function doRefresh() {
   if (historyLoading) return;
   historyLoading = true;
@@ -1105,10 +1131,7 @@ async function doRefresh() {
   updateLoadingProgress(0);
 
   try {
-    const lastTs = cache.matchHistory.length > 0
-      ? Math.max(...cache.matchHistory.map(m => m?.info?.gameEndTimestamp || m?.info?.gameCreation || 0))
-      : null;
-    const startTime = lastTs > 0 ? Math.floor(lastTs / 1000) + 1 : null;
+    const startTime = getLatestMatchTimestamp();
     const matchIds = await window.api.fetchMatchIds(cache.puuid, MAX_FETCH_COUNT, startTime);
     updateLoadingProgress(10);
 
@@ -1145,7 +1168,7 @@ async function doRefresh() {
       $('modal-refresh-msg').innerHTML =
         `<div class="refresh-summary">${newWins.length}개의 챔피언이 새로 추가되었습니다!</div>` +
         `<div class="refresh-champ-grid">${items}</div>`;
-      $('modal-refresh').classList.remove('hidden');
+      openModal('modal-refresh');
     }
   } catch (err) {
     if (isApiKeyError(err)) { redirectToApiKeyScreen(); return; }
@@ -1159,8 +1182,8 @@ async function doRefresh() {
 
 $('btn-refresh-top').addEventListener('click', doRefresh);
 
-$('modal-refresh-close').addEventListener('click', () => $('modal-refresh').classList.add('hidden'));
-$('modal-refresh-ok').addEventListener('click', () => $('modal-refresh').classList.add('hidden'));
+$('modal-refresh-close').addEventListener('click', () => closeModal('modal-refresh'));
+$('modal-refresh-ok').addEventListener('click', () => closeModal('modal-refresh'));
 
 // ── Tooltip ────────────────────────────────────────────────────────────────
 const tooltipEl = $('tooltip');
@@ -1169,13 +1192,13 @@ async function preloadAugmentIcons(matches) {
   const seen = new Set();
   const jobs = [];
   for (const match of matches) {
-    if (!ARENA_QUEUE_IDS.has(match?.info?.queueId)) continue;
+    if (!isArenaMatch(match)) continue;
     const p = match.info.participants?.find(x => x.puuid === cache.puuid);
     if (!p) continue;
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= AUGMENT_SLOT_COUNT; i++) {
       const augId = p[`playerAugment${i}`];
       const aug = augId && cache.augments[augId];
-      if (aug && !isGameEffect(aug) && !aug.iconBase64 && (aug.iconLarge || aug.iconSmall) && !seen.has(augId)) {
+      if (aug && isDisplayableAug(aug) && !aug.iconBase64 && (aug.iconLarge || aug.iconSmall) && !seen.has(augId)) {
         seen.add(augId);
         jobs.push(loadAugmentIcon(aug));
       }
@@ -1342,10 +1365,80 @@ function hideLoadingModal() {
 // ── Error modal ────────────────────────────────────────────────────────────
 function showError(msg) {
   $('modal-error-msg').textContent = msg;
-  $('modal-error').classList.remove('hidden');
+  openModal('modal-error');
 }
-$('modal-error-close').addEventListener('click', () => $('modal-error').classList.add('hidden'));
-$('modal-error-ok').addEventListener('click', () => $('modal-error').classList.add('hidden'));
+$('modal-error-close').addEventListener('click', () => closeModal('modal-error'));
+$('modal-error-ok').addEventListener('click', () => closeModal('modal-error'));
+
+// ── Titlebar augment reel ──────────────────────────────────────────────────
+(function initAugReel() {
+  const FILES  = ['능.webp', '능더능.webp', '능더능더능.webp'];
+  const GRADES = ['silver',  'gold',        'prismatic'];
+
+  const TRANSITION_MS = 1200; // 이미지·폰트 공통 전환 속도
+  const HOLD_MS       = 1000; // 전환 완료 후 대기
+  const INTERVAL      = TRANSITION_MS + TRANSITION_MS + HOLD_MS; // 3400ms
+
+  const reel = $('titlebar-aug-reel');
+  if (!reel) return;
+
+  const imgs = FILES.map(f => {
+    const img = document.createElement('img');
+    img.src = '../assets/augments/' + f.replace(/ /g, '%20');
+    img.alt = '';
+    img.draggable = false;
+    reel.appendChild(img);
+    return img;
+  });
+
+  const titleLayers = [...document.querySelectorAll('.arena-log-title-layer')];
+  let curTitle = 0;
+  if (titleLayers.length === 2) {
+    titleLayers[0].dataset.grade = GRADES[0];
+    titleLayers[1].dataset.grade = GRADES[0];
+    titleLayers[0].classList.add('active');
+  }
+
+  let idx = 0;
+  imgs[idx].classList.add('aug-visible');
+
+  setInterval(() => {
+    const prevIdx = idx;
+    idx = (idx + 1) % imgs.length;
+
+    // Phase 1: 이미지 wipe-out + wipe-in 동시 시작
+    imgs[prevIdx].classList.remove('aug-visible');
+    imgs[prevIdx].classList.add('aug-leaving');
+    imgs[idx].classList.add('aug-entering');
+
+    // Phase 1 완료: 이미지 상태 확정
+    setTimeout(() => {
+      imgs[prevIdx].classList.remove('aug-leaving');
+      imgs[idx].classList.remove('aug-entering');
+      imgs[idx].classList.add('aug-visible');
+    }, TRANSITION_MS);
+
+    // Phase 2: 폰트 sweep 시작 (이미지 wipe와 430ms 시차)
+    setTimeout(() => {
+      if (titleLayers.length === 2) {
+        const next = 1 - curTitle;
+        const current = curTitle;
+        titleLayers[next].dataset.grade = GRADES[idx];
+        titleLayers[current].classList.remove('active');
+        titleLayers[current].classList.add('title-leaving');
+        requestAnimationFrame(() => {
+          titleLayers[next].classList.add('title-sweeping');
+          titleLayers[next].addEventListener('animationend', () => {
+            titleLayers[next].classList.remove('title-sweeping');
+            titleLayers[next].classList.add('active');
+            titleLayers[current].classList.remove('title-leaving');
+            curTitle = next;
+          }, { once: true });
+        });
+      }
+    }, TRANSITION_MS - 770);
+  }, INTERVAL);
+})();
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 loadAllData();

@@ -1,6 +1,6 @@
 {
   "name": "arenolog",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "리그 오브 레전드 아레나 60챔피언 우승 트래커",
   "main": "main.js",
   "scripts": {
