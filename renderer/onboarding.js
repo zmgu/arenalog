@@ -45,13 +45,13 @@ const EDIT_STEPS = [
   {
     targetId: 'champ-grid',
     title: '챔피언 선택 — <span class="guide-title-del">삭제</span>',
-    desc: '<span class="g-gold">금색 테두리</span> 또는 <span class="g-purple">보라색 테두리</span>(수동 추가) 챔피언을 클릭하면 <span class="g-del">빨강 테두리</span>로 변경됩니다. 완료 상태를 취소할 때 사용합니다.<span class="desc-bullet-line"><span class="desc-bullet">·</span> 최대 <span class="g-del">10개</span>까지 선택 가능</span>',
+    desc: '<span class="g-gold">금색 테두리</span> 챔피언을 클릭하면 <span class="g-del">빨강 테두리</span>로 변경됩니다. 완료 상태를 취소할 때 사용합니다.<span class="desc-bullet-line"><span class="desc-bullet">·</span> 최대 <span class="g-del">10개</span>까지 선택 가능</span>',
     side: 'right', pad: 8, tailOffset: 20,
   },
   {
     targetId: 'btn-edit-reset',
     title: '초기화 버튼',
-    desc: '<span class="g-purple">보라색 테두리</span>(수동 추가) 챔피언을 <span class="g-del">전체 삭제 대상</span>으로 지정합니다.',
+    desc: '<span style="display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;background:#1e1a0a;border:1px solid #5a4a20;border-radius:2px;color:#c89b3c;vertical-align:middle;position:relative;top:-1px;margin-right:4px;"><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></span>수동 추가한 챔피언을 <span class="g-del">전체 삭제 대상</span>으로 지정합니다.',
     side: 'bottom', pad: 4, tailOffset: 104,
   },
   {

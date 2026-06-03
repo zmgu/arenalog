@@ -29,6 +29,8 @@ const TOOLTIP_HEIGHT      = 120;
 const RANK_COLORS         = ['#c89b3c', '#888888', '#8B6914'];
 const AUGMENT_SLOT_COUNT  = 6; // playerAugment1 ~ playerAugment6
 const ITEM_SLOT_COUNT     = 6; // 아이템 표시 슬롯 수 (item0 ~ item6 = 7개 읽되 6칸 표시)
+const HISTORY_CONCURRENCY = 5;
+const HISTORY_BATCH_DELAY = 300; // ms between batches (~16 req/s)
 
 // 매치 히스토리에서 제외할 아이템 ID (비전 탐지기 계열: 3348 Arcane Sweeper, 3364 Oracle Lens, 3513 Eye of the Herald)
 const EXCLUDED_ITEM_IDS = new Set(['3348', '3364', '3513']);
@@ -115,7 +117,7 @@ async function scanAndMarkWins(matches, prevCompleted = null) {
   const newWins = [];
   for (const match of matches) {
     if (!isArenaMatch(match)) continue;
-    const p = match.info.participants?.find(x => x.puuid === cache.puuid);
+    const p = getMyParticipant(match);
     if (!p || p.placement !== 1 || completedSet.has(p.championName)) continue;
     if (prevCompleted?.has(p.championName)) continue;
     const champId = p.championName;
@@ -129,6 +131,10 @@ async function scanAndMarkWins(matches, prevCompleted = null) {
 
 function getChampInfo(id) {
   return cache.champions[id] ?? cache.champions[cache.championsIndex[id?.toLowerCase()]];
+}
+
+function getMyParticipant(match) {
+  return match.info.participants?.find(x => x.puuid === cache.puuid);
 }
 let completedSet = new Set();   // champion_id strings
 let manualSet = new Set();      // 수동 추가된 champion_id strings
@@ -431,6 +437,19 @@ async function handleLogin() {
 }
 
 // ── Screen 2: Main ─────────────────────────────────────────────────────────
+function updateSyncTimeDisplay(isoString) {
+  const el = $('history-sync-time');
+  if (!isoString) { el.classList.add('hidden'); return; }
+  const d = new Date(isoString);
+  const yyyy = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  el.textContent = `마지막 갱신: ${yyyy}-${mo}-${day} ${hh}:${mm}`;
+  el.classList.remove('hidden');
+}
+
 function showMainScreen(name, tag) {
   $('user-name-display').textContent = name;
   $('user-tag-display').textContent = '#' + tag;
@@ -438,6 +457,7 @@ function showMainScreen(name, tag) {
   renderChampionGrid();
   updateStats();
   loadProfileIcon();
+  window.api.getSetting('last_sync_at').then(t => updateSyncTimeDisplay(t));
 }
 
 async function refreshAccountData(puuid) {
@@ -536,7 +556,7 @@ function updateWinrateStat() {
   const arenaMatches = (cache.matchHistory || []).filter(isArenaMatch);
   const recent = arenaMatches.slice(0, RECENT_MATCH_WINDOW);
   const winCount = recent.filter(m => {
-    const p = m.info.participants?.find(x => x.puuid === cache.puuid);
+    const p = getMyParticipant(m);
     return p && p.placement === 1;
   }).length;
   const winPct = recent.length > 0 ? Math.round((winCount / RECENT_MATCH_WINDOW) * 100) : 0;
@@ -549,7 +569,7 @@ function updateWinrateStat() {
   for (let i = 0; i < RECENT_MATCH_WINDOW; i++) {
     const slot = document.createElement('div');
     if (i < recent.length) {
-      const p = recent[i].info.participants?.find(x => x.puuid === cache.puuid);
+      const p = getMyParticipant(recent[i]);
       const placement = p?.placement;
       slot.className = 'win-champ-slot' + (placement === 1 ? ' win' : placement >= 2 && placement <= 4 ? ' mid' : '');
       if (placement) slot.textContent = placement;
@@ -564,7 +584,7 @@ function updateTopAugStat() {
   const augCount = {};
   for (const match of cache.matchHistory) {
     if (!isArenaMatch(match)) continue;
-    const p = match.info.participants?.find(x => x.puuid === cache.puuid);
+    const p = getMyParticipant(match);
     if (!p) continue;
     for (let i = 1; i <= AUGMENT_SLOT_COUNT; i++) {
       const augId = p[`playerAugment${i}`];
@@ -668,18 +688,29 @@ function createChampionCell(champ) {
     iconDiv.appendChild(img);
   }
 
+  const iconWrap = document.createElement('div');
+  iconWrap.className = 'champ-icon-wrap';
+  iconWrap.appendChild(iconDiv);
+
+  if (champ.manual) {
+    const badge = document.createElement('div');
+    badge.className = 'champ-manual-badge';
+    badge.innerHTML = `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`;
+    iconWrap.appendChild(badge);
+  }
+
   const nameDiv = document.createElement('div');
   nameDiv.className = 'champ-name';
   nameDiv.textContent = champ.nameKo.length > 5 ? champ.nameKo.slice(0, 5) + '…' : champ.nameKo;
 
-  cell.appendChild(iconDiv);
+  cell.appendChild(iconWrap);
   cell.appendChild(nameDiv);
 
   if (champ.manual) {
     cell.addEventListener('mouseenter', (e) => {
       tooltipEl.className = 'tooltip-box';
       tooltipEl.innerHTML = `
-        <div class="tooltip-name" style="color:#c4a8f0;">${escapeHtml(champ.nameKo)}</div>
+        <div class="tooltip-name" style="color:#c89b3c;">${escapeHtml(champ.nameKo)}</div>
         <div class="tooltip-divider"></div>
         <div class="tooltip-desc">편집 모드에서 우승 완료 챔피언으로 수동 등록</div>
       `;
@@ -807,7 +838,7 @@ function enterEditMode() {
   renderChampionGrid(searchInput.value);
 }
 
-function exitEditMode(save) {
+function exitEditMode() {
   editMode = false;
   editPending = { add: new Set(), del: new Set() };
   $('champ-header-normal').classList.remove('hidden');
@@ -863,10 +894,6 @@ $('modal-edit-apply').addEventListener('click', async () => {
 
 // ── Match History ──────────────────────────────────────────────────────────
 
-// Fetch at most CONCURRENCY requests at a time to stay within rate limits
-const HISTORY_CONCURRENCY = 5;
-const HISTORY_BATCH_DELAY = 300; // ms between batches (~16 req/s)
-
 async function loadMatchHistory() {
   if (historyLoading) return;
   historyLoading = true;
@@ -878,7 +905,6 @@ async function loadMatchHistory() {
 
   try {
     const matchIds = await window.api.fetchMatchIds(cache.puuid, MAX_FETCH_COUNT);
-    console.log('[loadMatchHistory] puuid:', cache.puuid, '| matchIds:', matchIds.length, matchIds.slice(0, 3));
     updateLoadingProgress(10);
     if (!matchIds.length) {
       historyEl.innerHTML = '<div class="history-empty">아레나 매치 기록이 없습니다</div>';
@@ -937,12 +963,6 @@ function renderMatchHistory(matches) {
   const historyEl = $('history-scroll');
   historyEl.innerHTML = '';
 
-  if (matches.length) {
-    const queueCounts = {};
-    matches.forEach(m => { const q = m.info?.queueId; queueCounts[q] = (queueCounts[q] || 0) + 1; });
-    window.api.log('renderMatchHistory total=' + matches.length, 'queueIds:', JSON.stringify(queueCounts));
-  }
-
   if (!matches.length) {
     historyEl.innerHTML = '<div class="history-empty">아레나 매치 기록이 없습니다</div>';
     return;
@@ -950,7 +970,7 @@ function renderMatchHistory(matches) {
 
   for (const match of matches) {
     if (!isArenaMatch(match)) continue;
-    const participant = match.info.participants?.find(p => p.puuid === cache.puuid);
+    const participant = getMyParticipant(match);
     if (!participant) continue;
 
     const champId = participant.championName;
@@ -1161,6 +1181,10 @@ async function doRefresh() {
     refreshMatchHistoryView();
     renderChampionGrid(searchInput.value);
 
+    const syncTime = new Date().toISOString();
+    await window.api.setSetting('last_sync_at', syncTime);
+    updateSyncTimeDisplay(syncTime);
+
     if (newWins.length > 0) {
       const items = newWins.map(n =>
         `<div class="refresh-champ-item"><span class="refresh-champ-dot">•</span><span class="refresh-champ-name">${escapeHtml(n)}</span></div>`
@@ -1193,7 +1217,7 @@ async function preloadAugmentIcons(matches) {
   const jobs = [];
   for (const match of matches) {
     if (!isArenaMatch(match)) continue;
-    const p = match.info.participants?.find(x => x.puuid === cache.puuid);
+    const p = getMyParticipant(match);
     if (!p) continue;
     for (let i = 1; i <= AUGMENT_SLOT_COUNT; i++) {
       const augId = p[`playerAugment${i}`];
