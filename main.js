@@ -43,7 +43,16 @@ function getSettings() {
   if (!_settingsCache) _settingsCache = readJSON(settingsFile, {});
   return _settingsCache;
 }
-function getChampions() { return readJSON(championsFile, {}); }
+let _championsCache = null;
+function getChampions() {
+  if (!_championsCache) _championsCache = readJSON(championsFile, {});
+  return _championsCache;
+}
+let _matchCacheData = null;
+function getMatchCache() {
+  if (!_matchCacheData) _matchCacheData = readJSON(matchCacheFile, {});
+  return _matchCacheData;
+}
 
 let matchCacheFile;
 
@@ -60,7 +69,7 @@ function initStorage() {
 
 // puuid 없이 루트 레벨에 저장된 구버전 데이터를 현재 계정 아래로 이전
 function migrateChampionsJson() {
-  const data = readJSON(championsFile, {});
+  const data = getChampions();
   // puuid는 40자 이상, 챔피언 ID는 최대 20자 이하로 구분
   const flatKeys = Object.keys(data).filter(k => {
     if (k.length > 30) return false;          // 긴 키는 puuid → 건드리지 않음
@@ -84,6 +93,7 @@ function migrateChampionsJson() {
     for (const key of flatKeys) delete data[key];
   }
 
+  _championsCache = data;
   writeJSON(championsFile, data);
 }
 
@@ -158,6 +168,7 @@ ipcMain.handle('apply-champion-changes', (_, puuid, toAdd, toDelete) => {
   for (const c of toDelete) {
     if (data[puuid][c.id]) data[puuid][c.id].isCompleted = false;
   }
+  _championsCache = data;
   writeJSON(championsFile, data);
 });
 
@@ -169,12 +180,13 @@ ipcMain.handle('mark-champion-completed', (_, puuid, championId, nameKo, nameEn)
     champion_name_ko: nameKo, champion_name_en: nameEn,
     isCompleted: true, source: 'auto', completed_at: new Date().toISOString(),
   };
+  _championsCache = data;
   writeJSON(championsFile, data);
 });
 
 ipcMain.handle('get-all-cached-matches', (_, puuid) => {
-  const cache = readJSON(matchCacheFile, {});
-  return Object.values(cache).filter(match =>
+  const data = getMatchCache();
+  return Object.values(data).filter(match =>
     match.info?.participants?.some(p => p.puuid === puuid)
   );
 });
@@ -243,11 +255,11 @@ ipcMain.handle('fetch-match-ids', async (_, puuid, count = 20, startTime = null)
 // Match detail cache (persisted to disk)
 ipcMain.handle('get-cached-matches-bulk', (_, matchIds) => {
   if (!Array.isArray(matchIds)) return {};
-  const cache = readJSON(matchCacheFile, {});
+  const data = getMatchCache();
   const result = {};
   for (const id of matchIds) {
-    if (typeof id === 'string' && /^[A-Z0-9_]{1,32}$/i.test(id) && cache[id]) {
-      result[id] = cache[id];
+    if (typeof id === 'string' && /^[A-Z0-9_]{1,32}$/i.test(id) && data[id]) {
+      result[id] = data[id];
     }
   }
   return result;
@@ -255,23 +267,24 @@ ipcMain.handle('get-cached-matches-bulk', (_, matchIds) => {
 
 ipcMain.handle('save-cached-matches', async (_, entries) => {
   if (!Array.isArray(entries)) return;
-  const cache = readJSON(matchCacheFile, {});
+  const mc = getMatchCache();
   for (const { id, data } of entries) {
     // Riot 매치 ID 형식만 허용 (예: KR_1234567890) — prototype 오염 방지
     if (typeof id !== 'string' || !/^[A-Z0-9_]{1,32}$/i.test(id)) continue;
-    cache[id] = data;
+    mc[id] = data;
   }
   // 오래된 항목 정리: 최신 MAX_CACHE_ENTRIES개만 보관
-  const keys = Object.keys(cache);
+  const keys = Object.keys(mc);
   if (keys.length > MAX_CACHE_ENTRIES) {
     const sorted = keys.sort((a, b) => {
-      const tA = cache[a]?.info?.gameEndTimestamp || cache[a]?.info?.gameCreation || 0;
-      const tB = cache[b]?.info?.gameEndTimestamp || cache[b]?.info?.gameCreation || 0;
+      const tA = mc[a]?.info?.gameEndTimestamp || mc[a]?.info?.gameCreation || 0;
+      const tB = mc[b]?.info?.gameEndTimestamp || mc[b]?.info?.gameCreation || 0;
       return tB - tA;
     });
-    for (const k of sorted.slice(MAX_CACHE_ENTRIES)) delete cache[k];
+    for (const k of sorted.slice(MAX_CACHE_ENTRIES)) delete mc[k];
   }
-  await writeJSONAsync(matchCacheFile, cache);
+  _matchCacheData = mc;
+  await writeJSONAsync(matchCacheFile, mc);
 });
 
 ipcMain.handle('fetch-match-detail', async (_, matchId) => {
@@ -289,9 +302,10 @@ ipcMain.handle('fetch-match-detail', async (_, matchId) => {
 
 // ── Asset proxy (avoids CORS in renderer) ────────────────────────────────
 ipcMain.handle('reset-data', () => {
+  _championsCache = {};
   writeJSON(championsFile, {});
+  _matchCacheData = {};
   writeJSON(matchCacheFile, {});
-  // champions 캐시 초기화 (settings는 유지)
 });
 
 ipcMain.handle('fetch-url-base64', async (_, url) => {

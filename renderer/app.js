@@ -1,12 +1,9 @@
 // ── Utilities ─────────────────────────────────────────────────────────────
+const _ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 function escapeHtml(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  return String(str ?? '').replace(/[&<>"']/g, c => _ESC[c]);
 }
+const pad2 = n => String(n).padStart(2, '0');
 
 // ── State ──────────────────────────────────────────────────────────────────
 const ARENA_QUEUE_IDS = new Set([1700, 1750]);
@@ -49,7 +46,6 @@ const sortByTimestampDesc = (a, b) =>
 
 function parseApiError(err) {
   const status = err?.cause?.status ?? err?.response?.status;
-  if (status === 401 || status === 403) return null; // redirectToApiKeyScreen이 처리
   if (status === 429) return 'API Rate Limit 초과. 잠시 후 다시 시도해 주세요.';
   return null;
 }
@@ -182,21 +178,20 @@ document.addEventListener('click', (e) => {
 
 // ── Loading helpers ────────────────────────────────────────────────────────
 const STEPS = [
-  { id: 'step-version',   label: 'Data Dragon 버전 확인' },
-  { id: 'step-champions', label: '챔피언 목록 로드' },
-  { id: 'step-icons',     label: '챔피언 아이콘 로드' },
-  { id: 'step-items',     label: '아이템 데이터 로드' },
-  { id: 'step-augments',  label: '증강 데이터 로드' },
+  'Data Dragon 버전 확인',
+  '챔피언 목록 로드',
+  '챔피언 아이콘 로드',
+  '아이템 데이터 로드',
+  '증강 데이터 로드',
 ];
 
 function renderSteps(activeIdx) {
   const container = $('loading-steps');
-  container.innerHTML = STEPS.map((s, i) => {
-    let cls = '';
-    let icon = '○';
+  container.innerHTML = STEPS.map((label, i) => {
+    let cls = '', icon = '○';
     if (i < activeIdx) { cls = 'done'; icon = '✓'; }
     else if (i === activeIdx) { cls = 'active'; icon = '…'; }
-    return `<div class="loading-step ${cls}"><span class="step-icon">${icon}</span>${s.label}</div>`;
+    return `<div class="loading-step ${cls}"><span class="step-icon">${icon}</span>${label}</div>`;
   }).join('');
 }
 
@@ -227,6 +222,7 @@ async function loadChampions() {
     cache.champions[c.id] = { nameKo: c.name, nameEn: c.id, iconBase64: null };
     cache.championsIndex[c.id.toLowerCase()] = c.id;
   }
+  cache.championsArray = champEntries.map(c => ({ id: c.id, nameKo: c.name, nameEn: c.id, iconBase64: null }));
   return champEntries;
 }
 
@@ -235,18 +231,44 @@ async function loadChampionIcons(champEntries) {
     const url = `https://ddragon.leagueoflegends.com/cdn/${cache.version}/img/champion/${c.id}.png`;
     cache.champions[c.id].iconBase64 = await window.api.fetchUrlBase64(url);
   }));
+  for (const item of cache.championsArray) {
+    item.iconBase64 = cache.champions[item.id].iconBase64;
+  }
 }
 
 async function loadItems() {
   const itemData = await window.api.fetchUrlJson(
     `https://ddragon.leagueoflegends.com/cdn/${cache.version}/data/ko_KR/item.json`
   );
-  await Promise.allSettled(Object.entries(itemData?.data ?? {}).map(async ([id, item]) => {
-    const iconBase64 = await window.api.fetchUrlBase64(
+  for (const [id, item] of Object.entries(itemData?.data ?? {})) {
+    cache.items[id] = { name: item.name, description: item.description, iconBase64: null };
+  }
+}
+
+async function loadItemIcon(id) {
+  const item = cache.items[id];
+  if (!item || item.iconBase64) return;
+  try {
+    item.iconBase64 = await window.api.fetchUrlBase64(
       `https://ddragon.leagueoflegends.com/cdn/${cache.version}/img/item/${id}.png`
     );
-    cache.items[id] = { name: item.name, description: item.description, iconBase64 };
-  }));
+  } catch {}
+}
+
+async function preloadItemIcons(matches) {
+  const usedIds = new Set();
+  for (const match of matches) {
+    if (!isArenaMatch(match)) continue;
+    const p = getMyParticipant(match);
+    if (!p) continue;
+    for (let i = 0; i <= ITEM_SLOT_COUNT; i++) {
+      const itemId = p[`item${i}`];
+      if (itemId && itemId !== 0 && !EXCLUDED_ITEM_IDS.has(String(itemId))) {
+        usedIds.add(String(itemId));
+      }
+    }
+  }
+  await Promise.allSettled([...usedIds].map(id => loadItemIcon(id)));
 }
 
 async function loadAugments() {
@@ -352,8 +374,8 @@ async function loadMatchHistoryFromCache() {
     cache.matchHistory = cached;
     await scanAndMarkWins(cache.matchHistory);
     refreshMatchHistoryView();
-    renderChampionGrid();
-    await preloadAugmentIcons(cache.matchHistory);
+    renderChampionGrid(searchInput.value);
+    await Promise.all([preloadAugmentIcons(cache.matchHistory), preloadItemIcons(cache.matchHistory)]);
   } finally {
     historyLoading = false;
     hideLoadingModal();
@@ -441,12 +463,7 @@ function updateSyncTimeDisplay(isoString) {
   const el = $('history-sync-time');
   if (!isoString) { el.classList.add('hidden'); return; }
   const d = new Date(isoString);
-  const yyyy = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  el.textContent = `마지막 갱신: ${yyyy}-${mo}-${day} ${hh}:${mm}`;
+  el.textContent = `마지막 갱신: ${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   el.classList.remove('hidden');
 }
 
@@ -454,6 +471,7 @@ function showMainScreen(name, tag) {
   $('user-name-display').textContent = name;
   $('user-tag-display').textContent = '#' + tag;
   showScreen('main');
+  initWinChampsGrid();
   renderChampionGrid();
   updateStats();
   loadProfileIcon();
@@ -496,7 +514,7 @@ $('btn-change-account').addEventListener('click', async () => {
   cache.matchHistory = [];
   completedSet = new Set();
   manualSet = new Set();
-  exitEditMode(false);
+  exitEditMode();
   // 프로필 아이콘 초기화
   document.querySelector('.user-dot').innerHTML = `
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c89b3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -531,8 +549,9 @@ $('modal-reset-confirm').addEventListener('click', async () => {
   completedSet = new Set();
   manualSet = new Set();
   cache.matchHistory = [];
-  exitEditMode(false);
-  renderChampionGrid();
+  searchInput.value = '';
+  searchClear.classList.add('hidden');
+  exitEditMode();
   updateStats();
   $('history-scroll').innerHTML = '<div class="history-empty">초기화 완료. 새로고침으로 매치 기록을 불러오세요</div>';
 });
@@ -552,6 +571,16 @@ function updateCompletionStat() {
   $('champ-count-label').textContent = `${done} / ${TOTAL_CHAMPIONS}`;
 }
 
+function initWinChampsGrid() {
+  const grid = $('win-champs-grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < RECENT_MATCH_WINDOW; i++) {
+    const slot = document.createElement('div');
+    slot.className = 'win-champ-slot';
+    grid.appendChild(slot);
+  }
+}
+
 function updateWinrateStat() {
   const arenaMatches = (cache.matchHistory || []).filter(isArenaMatch);
   const recent = arenaMatches.slice(0, RECENT_MATCH_WINDOW);
@@ -564,19 +593,19 @@ function updateWinrateStat() {
   $('stat-winrate-pct').textContent = winPct + '%';
   $('donut-arc').style.strokeDashoffset = circumference * (1 - winPct / 100);
 
-  const grid = $('win-champs-grid');
-  grid.innerHTML = '';
+  const slots = $('win-champs-grid').children;
   for (let i = 0; i < RECENT_MATCH_WINDOW; i++) {
-    const slot = document.createElement('div');
+    const slot = slots[i];
+    if (!slot) continue;
     if (i < recent.length) {
       const p = getMyParticipant(recent[i]);
       const placement = p?.placement;
       slot.className = 'win-champ-slot' + (placement === 1 ? ' win' : placement >= 2 && placement <= 4 ? ' mid' : '');
-      if (placement) slot.textContent = placement;
+      slot.textContent = placement ?? '';
     } else {
       slot.className = 'win-champ-slot';
+      slot.textContent = '';
     }
-    grid.appendChild(slot);
   }
 }
 
@@ -640,13 +669,13 @@ function renderTopAugments(top3) {
 
 // ── Champion Grid ──────────────────────────────────────────────────────────
 function filterAndSortChampions(filter) {
-  const all = Object.entries(cache.champions).map(([id, c]) => ({
-    id,
+  const all = cache.championsArray.map(c => ({
+    id: c.id,
     nameKo: c.nameKo,
     nameEn: c.nameEn,
     iconBase64: c.iconBase64,
-    done: completedSet.has(id),
-    manual: manualSet.has(id),
+    done: completedSet.has(c.id),
+    manual: manualSet.has(c.id),
   }));
 
   const filtered = filter
@@ -692,7 +721,7 @@ function createChampionCell(champ) {
   iconWrap.className = 'champ-icon-wrap';
   iconWrap.appendChild(iconDiv);
 
-  if (champ.manual) {
+  if (champ.manual && editMode) {
     const badge = document.createElement('div');
     badge.className = 'champ-manual-badge';
     badge.innerHTML = `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`;
@@ -706,7 +735,7 @@ function createChampionCell(champ) {
   cell.appendChild(iconWrap);
   cell.appendChild(nameDiv);
 
-  if (champ.manual) {
+  if (champ.manual && editMode) {
     cell.addEventListener('mouseenter', (e) => {
       tooltipEl.className = 'tooltip-box';
       tooltipEl.innerHTML = `
@@ -810,13 +839,13 @@ btnEdit.addEventListener('click', () => { if (!editMode) enterEditMode(); });
 
 $('btn-edit-save').addEventListener('click', () => {
   if (editPending.add.size === 0 && editPending.del.size === 0) {
-    exitEditMode(false);
+    exitEditMode();
     return;
   }
   showEditModal();
 });
 
-$('btn-edit-cancel').addEventListener('click', () => exitEditMode(false));
+$('btn-edit-cancel').addEventListener('click', () => exitEditMode());
 
 $('btn-edit-reset').addEventListener('click', () => {
   // 수동 추가 챔피언 전체를 삭제 대상으로 선택
@@ -887,9 +916,8 @@ $('modal-edit-apply').addEventListener('click', async () => {
   for (const { id } of toAdd) { completedSet.add(id); manualSet.add(id); }
   for (const { id } of toDelete) { completedSet.delete(id); manualSet.delete(id); }
 
-  exitEditMode(true);
+  exitEditMode();
   updateStats();
-  renderChampionGrid(searchInput.value);
 });
 
 // ── Match History ──────────────────────────────────────────────────────────
@@ -928,13 +956,14 @@ async function loadMatchHistory() {
     const phase2 = uncachedIds.slice(20);
 
     await fetchMatchesBatch(phase1, (fetched, total) => {
-      refreshMatchHistoryView();
       updateLoadingProgress(30 + (fetched / total) * 65);
     });
+    refreshMatchHistoryView();
 
     await scanAndMarkWins(cache.matchHistory);
-    renderChampionGrid();
+    renderChampionGrid(searchInput.value);
     updateStats();
+    preloadItemIcons(cache.matchHistory);
 
     // 3. Phase 2: 나머지 백그라운드 fetch
     if (phase2.length) {
@@ -957,6 +986,7 @@ async function loadMatchHistory() {
 async function fetchRemainingMatchesBackground(ids) {
   await fetchMatchesBatch(ids, () => updateStats());
   refreshMatchHistoryView();
+  preloadItemIcons(cache.matchHistory);
 }
 
 function renderMatchHistory(matches) {
@@ -1096,6 +1126,10 @@ function createItemSection(itemIds) {
     cell.className = `item-cell${itemInfo ? ' filled' : ''}`;
     if (itemInfo?.iconBase64) {
       cell.innerHTML = `<img src="${itemInfo.iconBase64}" alt="${escapeHtml(itemInfo.name)}">`;
+    } else if (itemInfo) {
+      loadItemIcon(itemId).then(() => {
+        if (itemInfo.iconBase64) cell.innerHTML = `<img src="${itemInfo.iconBase64}" alt="${escapeHtml(itemInfo.name)}">`;
+      });
     }
     if (itemInfo) {
       cell.addEventListener('mouseenter', (e) => showTooltip(e, 'item', itemInfo));
@@ -1112,32 +1146,31 @@ function createItemSection(itemIds) {
   return section;
 }
 
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 function formatDate(ts) {
   const d = new Date(ts);
   const now = new Date();
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  const time = `${h}:${m}`;
+  const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const today  = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(d.getFullYear(),   d.getMonth(),   d.getDate());
   const diffDays = Math.round((today - target) / 86400000);
 
   if (diffDays === 0) return `오늘 ${time}`;
   if (diffDays === 1) return `어제 ${time}`;
   if (diffDays === 2) return `2일 전 ${time}`;
 
-  const mo = d.getMonth() + 1;
-  const day = d.getDate();
-  const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
   const prefix = d.getFullYear() !== now.getFullYear() ? `${d.getFullYear()}년 ` : '';
-  return `${prefix}${mo}월 ${day}일 (${DAYS[d.getDay()]}) ${time}`;
+  return `${prefix}${d.getMonth()+1}월 ${d.getDate()}일 (${WEEKDAYS[d.getDay()]}) ${time}`;
 }
 
 // ── Refresh ────────────────────────────────────────────────────────────────
 function getLatestMatchTimestamp() {
   if (!cache.matchHistory.length) return null;
-  const ts = Math.max(...cache.matchHistory.map(m => m?.info?.gameEndTimestamp || m?.info?.gameCreation || 0));
+  const ts = cache.matchHistory.reduce((max, m) => {
+    const t = m?.info?.gameEndTimestamp || m?.info?.gameCreation || 0;
+    return t > max ? t : max;
+  }, 0);
   return ts > 0 ? Math.floor(ts / 1000) + 1 : null;
 }
 
@@ -1180,6 +1213,7 @@ async function doRefresh() {
     const newWins = await scanAndMarkWins(cache.matchHistory, prevCompleted);
     refreshMatchHistoryView();
     renderChampionGrid(searchInput.value);
+    preloadItemIcons(cache.matchHistory);
 
     const syncTime = new Date().toISOString();
     await window.api.setSetting('last_sync_at', syncTime);
