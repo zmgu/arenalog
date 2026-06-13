@@ -238,16 +238,22 @@ ipcMain.handle('fetch-account-by-puuid', async (_, puuid) => {
 ipcMain.handle('fetch-match-ids', async (_, puuid, count = 20, startTime = null) => {
   const safeCount = Math.min(Math.max(parseInt(count) || 20, 1), 100);
   const safeStart = startTime != null ? parseInt(startTime) || null : null;
-  let url = `https://asia.api.riotgames.com/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?count=${safeCount}`;
-  if (safeStart) url += `&startTime=${safeStart}`;
-  console.log('[fetch-match-ids] URL:', url);
+  const buildUrl = (queue) => {
+    let url = `https://asia.api.riotgames.com/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?queue=${queue}&count=${safeCount}`;
+    if (safeStart) url += `&startTime=${safeStart}`;
+    return url;
+  };
+  const safe404 = (err) => { if (err?.response?.status === 404) return { data: [] }; throw err; };
   try {
-    const res = await axios.get(url, getRiotOpts());
-    console.log('[fetch-match-ids] count:', res.data.length, '| first:', res.data[0]);
-    return res.data;
+    const [res1700, res1750] = await Promise.all([
+      axios.get(buildUrl(1700), getRiotOpts()).catch(safe404),
+      axios.get(buildUrl(1750), getRiotOpts()).catch(safe404),
+    ]);
+    const merged = [...new Set([...res1700.data, ...res1750.data])];
+    console.log('[fetch-match-ids] arena count:', merged.length, '| first:', merged[0]);
+    return merged;
   } catch (err) {
     console.error('[fetch-match-ids] error:', err?.response?.status, err?.message);
-    if (err?.response?.status === 404) return [];
     throw err;
   }
 });

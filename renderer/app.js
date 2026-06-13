@@ -588,7 +588,7 @@ function updateWinrateStat() {
     const p = getMyParticipant(m);
     return p && p.placement === 1;
   }).length;
-  const winPct = recent.length > 0 ? Math.round((winCount / RECENT_MATCH_WINDOW) * 100) : 0;
+  const winPct = recent.length > 0 ? Math.round((winCount / recent.length) * 100) : 0;
   const circumference = 2 * Math.PI * DONUT_RADIUS;
   $('stat-winrate-pct').textContent = winPct + '%';
   $('donut-arc').style.strokeDashoffset = circumference * (1 - winPct / 100);
